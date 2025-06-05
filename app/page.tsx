@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Palette, 
@@ -15,8 +15,10 @@ import {
   Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { WalletConnectModal } from '@/components/WalletConnectModal';
+import WalletSelectModal from '@/components/ui/WalletSelectModal';
 import { Header } from '@/components/Layout/Header';
+import { useWallet, useWalletModals } from '@/store/walletStore';
+import { getPopularCollections, generateMockArtAuctions, NFTCollection } from '@/lib/nft';
 
 // Демо данные
 const featuredArtworks = [
@@ -66,7 +68,37 @@ const stats = [
 ];
 
 export default function HomePage() {
-  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [collections, setCollections] = useState<NFTCollection[]>([]);
+  const [mockAuctions, setMockAuctions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const { isConnected, connectWallet } = useWallet();
+  const { showWalletModal, openWalletModal, closeWalletModal } = useWalletModals();
+
+  useEffect(() => {
+    loadNFTData();
+  }, []);
+
+  const loadNFTData = async () => {
+    try {
+      setLoading(true);
+      
+      // Загружаем популярные коллекции NFT
+      const popularCollections = await getPopularCollections(6);
+      setCollections(popularCollections);
+      
+      // Генерируем мок-данные для аукционов
+      const auctions = generateMockArtAuctions();
+      setMockAuctions(auctions);
+      
+    } catch (error) {
+      console.error('Ошибка загрузки NFT данных:', error);
+      // Fallback на мок-данные
+      setMockAuctions(generateMockArtAuctions());
+    } finally {
+      setLoading(false);
+    }
+  };
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -258,9 +290,10 @@ export default function HomePage() {
       </footer>
 
       {/* Wallet Connect Modal */}
-      <WalletConnectModal 
-        isOpen={walletModalOpen}
-        onClose={() => setWalletModalOpen(false)}
+      <WalletSelectModal 
+        isOpen={showWalletModal}
+        onClose={closeWalletModal}
+        onWalletConnected={connectWallet}
       />
     </div>
   );
