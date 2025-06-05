@@ -1,135 +1,64 @@
-name: 🚀 Deploy Vaults.cc
+name: Deploy to Server
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 📥 Checkout code
-      uses: actions/checkout@v4
-      
-    - name: 🟢 Setup Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
       with:
         node-version: '18'
         cache: 'npm'
-        
-    - name: 📦 Install dependencies
+    
+    - name: Install dependencies
       run: npm ci
-      
-    - name: 🔨 Build project
+    
+    - name: Build project
       run: npm run build
-      
-    - name: 🧪 Run tests (if any)
-      run: npm run lint
-      
-    - name: 📋 Create deployment archive
-      run: |
-        tar -czf vaults-cc-${{ github.sha }}.tar.gz \
-          --exclude=node_modules \
-          --exclude=.git \
-          --exclude=.github \
-          .
-          
-    - name: 🚀 Deploy to server
-      uses: appleboy/ssh-action@v1.0.3
+    
+    - name: Deploy to server
+      uses: appleboy/ssh-action@v1.0.0
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        port: ${{ secrets.SERVER_PORT || 22 }}
+        port: ${{ secrets.SERVER_PORT }}
         script: |
-          # Create deployment directory
-          mkdir -p /opt/vaults-cc
-          cd /opt/vaults-cc
+          # Обновляем код
+          cd /var/www/vaults-cc
+          git pull origin main
           
-          # Backup current version
-          if [ -d "current" ]; then
-            mv current backup-$(date +%Y%m%d-%H%M%S)
-          fi
+          # Устанавливаем зависимости и билдим
+          npm ci
+          npm run build
           
-          # Create new deployment directory
-          mkdir -p current
-          
-    - name: 📤 Upload files to server
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        port: ${{ secrets.SERVER_PORT || 22 }}
-        source: "vaults-cc-${{ github.sha }}.tar.gz"
-        target: "/opt/vaults-cc/"
-        
-    - name: 🔧 Setup and start application
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        port: ${{ secrets.SERVER_PORT || 22 }}
-        script: |
-          cd /opt/vaults-cc
-          
-          # Extract new version
-          tar -xzf vaults-cc-${{ github.sha }}.tar.gz -C current/
-          cd current
-          
-          # Install Node.js if not present
-          if ! command -v node &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-          fi
-          
-          # Install Nginx if not present
+          # Устанавливаем/настраиваем Nginx если нужно
           if ! command -v nginx &> /dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y nginx
+            apt update
+            apt install -y nginx certbot python3-certbot-nginx
+            
+            # Копируем конфигурацию Nginx
+            cp nginx.conf /etc/nginx/sites-available/vaults-cc
+            ln -sf /etc/nginx/sites-available/vaults-cc /etc/nginx/sites-enabled/
+            rm -f /etc/nginx/sites-enabled/default
+            
+            # Проверяем и запускаем Nginx
+            nginx -t && systemctl restart nginx
+            systemctl enable nginx
+            
+            # Получаем SSL сертификат
+            certbot --nginx -d vaults.cc --non-interactive --agree-tos --email admin@vaults.cc
           fi
           
-          # Install PM2 if not present
-          if ! command -v pm2 &> /dev/null; then
-            sudo npm install -g pm2
-          fi
-          
-          # Install dependencies
-          npm install --production
-          
-          # Stop existing application
-          pm2 stop vaults-cc || true
-          pm2 delete vaults-cc || true
-          
-          # Start new application
-          pm2 start ecosystem.config.js --env production
-          pm2 save
-          
-          # Setup startup script
-          sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u $USER --hp $HOME || true
-          
-          # Configure Nginx
-          sudo cp nginx.conf /etc/nginx/sites-available/vaults.cc
-          sudo ln -sf /etc/nginx/sites-available/vaults.cc /etc/nginx/sites-enabled/
-          sudo rm -f /etc/nginx/sites-enabled/default
-          sudo nginx -t && sudo systemctl reload nginx
-          
-          # Configure firewall
-          sudo ufw allow 80 || true
-          sudo ufw allow 443 || true
-          sudo ufw allow 3000 || true
-          
-          # Start Nginx
-          sudo systemctl enable nginx
-          sudo systemctl start nginx
-          
-          # Cleanup old archive
-          rm -f ../vaults-cc-${{ github.sha }}.tar.gz
-          
-          echo "🎉 Deployment completed successfully!"
-          echo "🌐 Site is available at: http://vaults.cc"
-          echo "🌐 Also available at: http://${{ secrets.SERVER_HOST }}" 
+          # Перезапускаем PM2
+          pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
+          pm2 save 
