@@ -1,0 +1,17 @@
+name: Test Simple Workflow
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Test step
+      run: |
+        echo "✅ GitHub Actions работает!"
+        echo "Домен: vaults.cc"
+        echo "Сервер: 69.10.59.234:43988"
+        date 
