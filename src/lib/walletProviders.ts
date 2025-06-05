@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
-import WalletConnectProvider from '@walletconnect/web3-provider';
-import QRCodeModal from '@walletconnect/qrcode-modal';
+// Временно отключены модули WalletConnect для stable сборки
+// import WalletConnectProvider from '@walletconnect/web3-provider';
+// import QRCodeModal from '@walletconnect/qrcode-modal';
 
 export interface WalletInfo {
   name: string;
@@ -120,33 +121,12 @@ export const connectPhantom = async (): Promise<ConnectedWallet | null> => {
   }
 };
 
-// Подключение WalletConnect
+// Подключение WalletConnect (временно отключено)
 export const connectWalletConnect = async (): Promise<ConnectedWallet | null> => {
   try {
-    const provider = new WalletConnectProvider({
-      infuraId: process.env.NEXT_PUBLIC_INFURA_ID || '',
-      qrcodeModal: QRCodeModal,
-      rpc: {
-        1: `https://mainnet.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`,
-        137: `https://polygon-mainnet.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_ID}`,
-      },
-    });
-
-    await provider.enable();
-    
-    const ethersProvider = new ethers.BrowserProvider(provider);
-    const signer = await ethersProvider.getSigner();
-    const address = await signer.getAddress();
-    const network = await ethersProvider.getNetwork();
-    const balance = await ethersProvider.getBalance(address);
-
-    return {
-      address,
-      provider,
-      chainId: Number(network.chainId),
-      walletName: 'WalletConnect',
-      balance: parseFloat(ethers.formatEther(balance))
-    };
+    // TODO: Добавить WalletConnect v2 интеграцию
+    console.warn('WalletConnect пока не поддерживается. Используйте MetaMask или Phantom.');
+    return null;
   } catch (error) {
     console.error('Ошибка подключения WalletConnect:', error);
     return null;
