@@ -87,6 +87,12 @@ jobs:
             sudo apt-get install -y nodejs
           fi
           
+          # Install Nginx if not present
+          if ! command -v nginx &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y nginx
+          fi
+          
           # Install PM2 if not present
           if ! command -v pm2 &> /dev/null; then
             sudo npm install -g pm2
@@ -106,11 +112,24 @@ jobs:
           # Setup startup script
           sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u $USER --hp $HOME || true
           
+          # Configure Nginx
+          sudo cp nginx.conf /etc/nginx/sites-available/vaults.cc
+          sudo ln -sf /etc/nginx/sites-available/vaults.cc /etc/nginx/sites-enabled/
+          sudo rm -f /etc/nginx/sites-enabled/default
+          sudo nginx -t && sudo systemctl reload nginx
+          
           # Configure firewall
+          sudo ufw allow 80 || true
+          sudo ufw allow 443 || true
           sudo ufw allow 3000 || true
+          
+          # Start Nginx
+          sudo systemctl enable nginx
+          sudo systemctl start nginx
           
           # Cleanup old archive
           rm -f ../vaults-cc-${{ github.sha }}.tar.gz
           
           echo "🎉 Deployment completed successfully!"
-          echo "🌐 Site is available at: http://${{ secrets.SERVER_HOST }}:3000" 
+          echo "🌐 Site is available at: http://vaults.cc"
+          echo "🌐 Also available at: http://${{ secrets.SERVER_HOST }}" 
