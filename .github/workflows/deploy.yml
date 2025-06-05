@@ -1,0 +1,116 @@
+name: 🚀 Deploy Vaults.cc
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🔨 Build project
+      run: npm run build
+      
+    - name: 🧪 Run tests (if any)
+      run: npm run lint
+      
+    - name: 📋 Create deployment archive
+      run: |
+        tar -czf vaults-cc-${{ github.sha }}.tar.gz \
+          --exclude=node_modules \
+          --exclude=.git \
+          --exclude=.github \
+          .
+          
+    - name: 🚀 Deploy to server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        password: ${{ secrets.SERVER_PASSWORD }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        script: |
+          # Create deployment directory
+          mkdir -p /opt/vaults-cc
+          cd /opt/vaults-cc
+          
+          # Backup current version
+          if [ -d "current" ]; then
+            mv current backup-$(date +%Y%m%d-%H%M%S)
+          fi
+          
+          # Create new deployment directory
+          mkdir -p current
+          
+    - name: 📤 Upload files to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        password: ${{ secrets.SERVER_PASSWORD }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        source: "vaults-cc-${{ github.sha }}.tar.gz"
+        target: "/opt/vaults-cc/"
+        
+    - name: 🔧 Setup and start application
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        password: ${{ secrets.SERVER_PASSWORD }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        script: |
+          cd /opt/vaults-cc
+          
+          # Extract new version
+          tar -xzf vaults-cc-${{ github.sha }}.tar.gz -C current/
+          cd current
+          
+          # Install Node.js if not present
+          if ! command -v node &> /dev/null; then
+            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          fi
+          
+          # Install PM2 if not present
+          if ! command -v pm2 &> /dev/null; then
+            sudo npm install -g pm2
+          fi
+          
+          # Install dependencies
+          npm install --production
+          
+          # Stop existing application
+          pm2 stop vaults-cc || true
+          pm2 delete vaults-cc || true
+          
+          # Start new application
+          pm2 start ecosystem.config.js --env production
+          pm2 save
+          
+          # Setup startup script
+          sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u $USER --hp $HOME || true
+          
+          # Configure firewall
+          sudo ufw allow 3000 || true
+          
+          # Cleanup old archive
+          rm -f ../vaults-cc-${{ github.sha }}.tar.gz
+          
+          echo "🎉 Deployment completed successfully!"
+          echo "🌐 Site is available at: http://${{ secrets.SERVER_HOST }}:3000" 
